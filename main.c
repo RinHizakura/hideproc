@@ -4,11 +4,31 @@
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/proc_fs.h>
+#include <linux/version.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("National Cheng Kung University, Taiwan");
 
 enum RETURN_CODE { SUCCESS };
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0)
+static unsigned long lookup_name(const char *name)
+{
+    struct kprobe kp = {.symbol_name = name};
+    unsigned long retval;
+
+    if (register_kprobe(&kp) < 0)
+        return 0;
+    retval = (unsigned long) kp.addr;
+    unregister_kprobe(&kp);
+    return retval;
+}
+#else
+static unsigned long lookup_name(const char *name)
+{
+    return kallsyms_lookup_name(name);
+}
+#endif
 
 struct ftrace_hook {
     const char *name;
@@ -19,7 +39,7 @@ struct ftrace_hook {
 
 static int hook_resolve_addr(struct ftrace_hook *hook)
 {
-    hook->address = kallsyms_lookup_name(hook->name);
+    hook->address = lookup_name(hook->name);
     if (!hook->address) {
         printk("unresolved symbol: %s\n", hook->name);
         return -ENOENT;
@@ -88,7 +108,8 @@ static struct ftrace_hook hook;
 static bool is_hidden_proc(pid_t pid)
 {
     pid_node_t *proc, *tmp_proc;
-    list_for_each_entry_safe (proc, tmp_proc, &hidden_proc, list_node) {
+    list_for_each_entry_safe(proc, tmp_proc, &hidden_proc, list_node)
+    {
         if (proc->id == pid)
             return true;
     }
@@ -105,7 +126,7 @@ static struct pid *hook_find_ge_pid(int nr, struct pid_namespace *ns)
 
 static void init_hook(void)
 {
-    real_find_ge_pid = (find_ge_pid_func) kallsyms_lookup_name("find_ge_pid");
+    real_find_ge_pid = (find_ge_pid_func) lookup_name("find_ge_pid");
     hook.name = "find_ge_pid";
     hook.func = hook_find_ge_pid;
     hook.orig = &real_find_ge_pid;
@@ -123,8 +144,9 @@ static int hide_process(pid_t pid)
 static int unhide_process(pid_t pid)
 {
     pid_node_t *proc, *tmp_proc;
-    list_for_each_entry_safe (proc, tmp_proc, &hidden_proc, list_node) {
-        if(proc->id == pid) {
+    list_for_each_entry_safe(proc, tmp_proc, &hidden_proc, list_node)
+    {
+        if (proc->id == pid) {
             list_del(&proc->list_node);
             kfree(proc);
         }
@@ -155,7 +177,8 @@ static ssize_t device_read(struct file *filep,
     if (*offset)
         return 0;
 
-    list_for_each_entry_safe (proc, tmp_proc, &hidden_proc, list_node) {
+    list_for_each_entry_safe(proc, tmp_proc, &hidden_proc, list_node)
+    {
         memset(message, 0, MAX_MESSAGE_SIZE);
         sprintf(message, OUTPUT_BUFFER_FORMAT, proc->id);
         copy_to_user(buffer + *offset, message, strlen(message));
@@ -232,9 +255,10 @@ static int _hideproc_init(void)
 static void _hideproc_exit(void)
 {
     pid_node_t *proc, *tmp_proc;
-    
+
     /* free pid_node_t allocated form kmalloc */
-    list_for_each_entry_safe (proc, tmp_proc, &hidden_proc, list_node) {
+    list_for_each_entry_safe(proc, tmp_proc, &hidden_proc, list_node)
+    {
         list_del(&proc->list_node);
         kfree(proc);
     }
@@ -243,8 +267,8 @@ static void _hideproc_exit(void)
     device_destroy(hideproc_class, dev);
     cdev_del(&cdev);
     class_destroy(hideproc_class);
-    unregister_chrdev_region(dev, MINOR_VERSION);   
-    
+    unregister_chrdev_region(dev, MINOR_VERSION);
+
     printk(KERN_INFO "@ %s\n", __func__);
 }
 
